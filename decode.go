@@ -92,14 +92,54 @@ func (d *Decoder) DecodeInt() (int64, error) {
 		return 0, err
 	}
 	d.offset += size + n
-	return 0, nil
+
+	var j int64
+	for i := 0; i < size; i++ {
+		j <<= 8
+		j |= int64(d.buf[d.offset-size+i])
+	}
+	j <<= 64 - (size * 8)
+	j >>= 64 - (size * 8)
+	return j, nil
 }
 
 func (d *Decoder) DecodeUint() (uint64, error) {
-	return 0, nil
+	id, n, err := decodeIdentifier(d.buf[d.offset:])
+	if err != nil {
+		return 0, err
+	}
+	if id.Type() != Primitive {
+		return 0, fmt.Errorf("uint: %w", ErrPrimitive)
+	}
+	d.offset += n
+	size, n, err := decodeLength(d.buf[d.offset:])
+	if err != nil {
+		return 0, err
+	}
+	d.offset += size + n
+
+	var j uint64
+	for i := 0; i < size; i++ {
+		j <<= 8
+		j |= uint64(d.buf[d.offset-size+i])
+	}
+	return j, nil
 }
 
 func (d *Decoder) DecodeFloat() (float64, error) {
+	id, n, err := decodeIdentifier(d.buf[d.offset:])
+	if err != nil {
+		return 0, err
+	}
+	if id.Type() != Primitive {
+		return 0, fmt.Errorf("float: %w", ErrPrimitive)
+	}
+	d.offset += n
+	size, n, err := decodeLength(d.buf[d.offset:])
+	if err != nil {
+		return 0, err
+	}
+	d.offset += size + n
 	return 0, nil
 }
 
