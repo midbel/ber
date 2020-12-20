@@ -110,7 +110,7 @@ func decodeIdentifier(b []byte) (Ident, int, error) {
 	class, kind, tag := uint64(b[0]>>6), uint64(b[0]>>5)&0x01, uint64(b[0]&0x1F)
 	if tag == 0x1F {
 		g, x := decode128(b[1:])
-		tag, n = uint64(g), n + x
+		tag, n = uint64(g), n+x
 	}
 	return Ident(class<<33 | kind<<32 | tag), n, nil
 }
