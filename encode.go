@@ -27,12 +27,6 @@ type Encoder struct {
 	buf []byte
 }
 
-func NewEncoder(buf []byte) *Encoder {
-	return &Encoder{
-		buf: buf,
-	}
-}
-
 func (e *Encoder) AsSequence() ([]byte, error) {
 	return e.encodeConstructed(Sequence)
 }
