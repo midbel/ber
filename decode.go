@@ -79,6 +79,19 @@ func (d *Decoder) DecodeBool() (bool, error) {
 }
 
 func (d *Decoder) DecodeInt() (int64, error) {
+	id, n, err := decodeIdentifier(d.buf[d.offset:])
+	if err != nil {
+		return 0, err
+	}
+	if id.Type() != Primitive {
+		return 0, fmt.Errorf("int: %w", ErrPrimitive)
+	}
+	d.offset += n
+	size, n, err := decodeLength(d.buf[d.offset:])
+	if err != nil {
+		return 0, err
+	}
+	d.offset += size + n
 	return 0, nil
 }
 
@@ -91,7 +104,18 @@ func (d *Decoder) DecodeFloat() (float64, error) {
 }
 
 func (d *Decoder) DecodeString() (string, error) {
-	return "", nil
+	_, n, err := decodeIdentifier(d.buf[d.offset:])
+	if err != nil {
+		return "", err
+	}
+	d.offset += n
+	size, n, err := decodeLength(d.buf[d.offset:])
+	if err != nil {
+		return "", err
+	}
+	d.offset += size + n
+	str := d.buf[d.offset-size : d.offset]
+	return string(str), nil
 }
 
 func (d *Decoder) DecodeOID() (string, error) {
@@ -99,7 +123,35 @@ func (d *Decoder) DecodeOID() (string, error) {
 }
 
 func (d *Decoder) DecodeTime() (time.Time, error) {
-	return time.Now(), nil
+	var t time.Time
+	id, n, err := decodeIdentifier(d.buf[d.offset:])
+	if err != nil {
+		return t, err
+	}
+	if id.Type() != Primitive {
+		return t, fmt.Errorf("time: %w", ErrPrimitive)
+	}
+	var pattern string
+	switch id.Tag() {
+	case UniversalTime.Tag():
+		pattern = patUniversTime
+	case GeneralizedTime.Tag():
+		pattern = patGeneralTime
+	default:
+		return t, fmt.Errorf("unsupported tag for time")
+	}
+	d.offset += n
+	size, n, err := decodeLength(d.buf[d.offset:])
+	if err != nil {
+		return t, err
+	}
+	d.offset += size + n
+	str := d.buf[d.offset-size : d.offset]
+	t, err = time.Parse(pattern, string(str))
+	if err == nil {
+		t = t.UTC()
+	}
+	return t, err
 }
 
 func decodeIdentifier(b []byte) (Ident, int, error) {
