@@ -18,10 +18,6 @@ var (
 	ErrConstructed = errors.New("encoding shall be constructed")
 )
 
-type Marshaler interface {
-	Marshal() ([]byte, error)
-}
-
 type Encoder struct {
 	err error
 	buf []byte

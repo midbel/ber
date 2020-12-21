@@ -11,6 +11,34 @@ func TestDecoder(t *testing.T) {
 	t.Run("int", testDecodeInt)
 	t.Run("string", testDecodeString)
 	t.Run("time", testDecodeTime)
+	t.Run("oid", testDecodeOID)
+}
+
+func testDecodeOID(t *testing.T) {
+	data := []struct {
+		Input []byte
+		Want  string
+	}{
+		{
+			Input: []byte{0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x0b},
+			Want:  "1.2.840.113549.1.1.11",
+		},
+		{
+			Input: []byte{0x0d, 0x04, 0xc2, 0x7b, 0x03, 0x02},
+			Want:  ".8571.3.2",
+		},
+	}
+	for _, d := range data {
+		dec := NewDecoder(d.Input)
+		got, err := dec.DecodeOID()
+		if err != nil {
+			t.Errorf("oid: fail to decode! %s", err)
+			continue
+		}
+		if got != d.Want {
+			t.Errorf("oid mismatched! want: %s, got %s", d.Want, got)
+		}
+	}
 }
 
 func testDecodeNull(t *testing.T) {

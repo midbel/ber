@@ -2,6 +2,8 @@ package ber
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -30,7 +32,29 @@ func (d *Decoder) Skip(n int) error {
 }
 
 func (d *Decoder) Decode(val interface{}) error {
-	return nil
+	if u, ok := val.(Unmarshaler); ok {
+		return u.Unmarshal(d)
+	}
+	var err error
+	switch val := val.(type) {
+	case *string:
+		*val, err = d.DecodeString()
+	case *bool:
+		*val, err = d.DecodeBool()
+	case *int:
+	case *int8:
+	case *int16:
+	case *int32:
+	case *int64:
+	case *uint:
+	case *uint8:
+	case *uint16:
+	case *uint32:
+	case *uint64:
+	case *time.Time:
+	default:
+	}
+	return err
 }
 
 func (d *Decoder) DecodeTagged() (Ident, int, error) {
@@ -78,6 +102,10 @@ func (d *Decoder) DecodeBool() (bool, error) {
 	return d.buf[d.offset-size] > 0x00, nil
 }
 
+func (d *Decoder) DecodeEnumerated() (int64, error) {
+	return d.DecodeInt()
+}
+
 func (d *Decoder) DecodeInt() (int64, error) {
 	id, n, err := decodeIdentifier(d.buf[d.offset:])
 	if err != nil {
@@ -98,8 +126,9 @@ func (d *Decoder) DecodeInt() (int64, error) {
 		j <<= 8
 		j |= int64(d.buf[d.offset-size+i])
 	}
-	j <<= 64 - (size * 8)
-	j >>= 64 - (size * 8)
+	size = 64 - (size * 8)
+	j <<= size
+	j >>= size
 	return j, nil
 }
 
@@ -159,7 +188,40 @@ func (d *Decoder) DecodeString() (string, error) {
 }
 
 func (d *Decoder) DecodeOID() (string, error) {
-	return "", nil
+	id, n, err := decodeIdentifier(d.buf[d.offset:])
+	if err != nil {
+		return "", err
+	}
+	if id.Type() != Primitive {
+		return "", fmt.Errorf("oid: %w", ErrPrimitive)
+	}
+	d.offset += n
+	size, n, err := decodeLength(d.buf[d.offset:])
+	if err != nil {
+		return "", err
+	}
+	d.offset += size + n
+	var (
+		str = d.buf[d.offset-size : d.offset]
+		ids []string
+		pos int
+	)
+	for pos < len(str) {
+		i, n := decode128(str[pos:])
+		if pos == 0 && id.Tag() == ObjectId.Tag() {
+			div, mod := i/40, i%40
+			ids = append(ids, strconv.Itoa(int(div)))
+			ids = append(ids, strconv.Itoa(int(mod)))
+		} else {
+			ids = append(ids, strconv.Itoa(int(i)))
+		}
+		pos += n
+	}
+	oid := strings.Join(ids, ".")
+	if id.Tag() == RelObjectId.Tag() {
+		oid = "." + oid
+	}
+	return oid, nil
 }
 
 func (d *Decoder) DecodeTime() (time.Time, error) {

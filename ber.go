@@ -8,6 +8,14 @@ import (
 	"unicode/utf8"
 )
 
+type Marshaler interface {
+	Marshal() ([]byte, error)
+}
+
+type Unmarshaler interface {
+	Unmarshal(*Decoder) error
+}
+
 const (
 	Universal uint8 = iota
 	Application
