@@ -122,7 +122,7 @@ func (d *Decoder) DecodeInt() (int64, error) {
 	}
 	d.offset += size + n
 
-	return decodeInt(d.buf[d.offset-size : d.offset]), nil
+	return decodeInt(d.buf[d.offset-size:d.offset], true), nil
 }
 
 func (d *Decoder) DecodeUint() (uint64, error) {
@@ -140,12 +140,8 @@ func (d *Decoder) DecodeUint() (uint64, error) {
 	}
 	d.offset += size + n
 
-	var j uint64
-	for i := 0; i < size; i++ {
-		j <<= 8
-		j |= uint64(d.buf[d.offset-size+i])
-	}
-	return j, nil
+	j := decodeInt(d.buf[d.offset-size:d.offset], false)
+	return uint64(j), nil
 }
 
 func (d *Decoder) DecodeFloat() (float64, error) {
@@ -279,15 +275,17 @@ func decodeIdentifier(b []byte) (Ident, int, error) {
 	return Ident(class<<33 | kind<<32 | tag), n, nil
 }
 
-func decodeInt(b []byte) int64 {
+func decodeInt(b []byte, sign bool) int64 {
 	var j int64
 	for _, i := range b {
 		j <<= 8
 		j |= int64(i)
 	}
-	size := 64 - (len(b) * 8)
-	j <<= size
-	j >>= size
+	if sign {
+		size := 64 - (len(b) * 8)
+		j <<= size
+		j >>= size
+	}
 	return j
 }
 
@@ -325,8 +323,8 @@ func decodeBinaryFloat(info byte, str []byte) (float64, error) {
 	} else {
 		size = 4
 	}
-	m := float64(decodeInt(str[size:]))
-	e := float64(decodeInt(str[:size]))
+	m := float64(decodeInt(str[size:], true))
+	e := float64(decodeInt(str[:size], true))
 	return sign * m * math.Pow(2, e), nil
 }
 
