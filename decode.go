@@ -2,6 +2,7 @@ package ber
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -121,15 +122,7 @@ func (d *Decoder) DecodeInt() (int64, error) {
 	}
 	d.offset += size + n
 
-	var j int64
-	for i := 0; i < size; i++ {
-		j <<= 8
-		j |= int64(d.buf[d.offset-size+i])
-	}
-	size = 64 - (size * 8)
-	j <<= size
-	j >>= size
-	return j, nil
+	return decodeInt(d.buf[d.offset-size : d.offset]), nil
 }
 
 func (d *Decoder) DecodeUint() (uint64, error) {
@@ -168,7 +161,24 @@ func (d *Decoder) DecodeFloat() (float64, error) {
 	if err != nil {
 		return 0, err
 	}
+	if size == 0 {
+		return 0, nil
+	}
 	d.offset += size + n
+	var (
+		str  = d.buf[d.offset-size+1 : d.offset]
+		info = d.buf[d.offset-size]
+	)
+	switch {
+	case info>>6 == 0: // decimal encoding
+		return decodeDecimalFloat(str)
+	case info>>6 == 1: // special float
+		return decodeSpecialFloat(info)
+	case info>>7 == 1: // binary encoding
+		return decodeBinaryFloat(info, str)
+	default:
+		return 0, fmt.Errorf("invalid float encoding: %x (%x)", info, str)
+	}
 	return 0, nil
 }
 
@@ -267,6 +277,61 @@ func decodeIdentifier(b []byte) (Ident, int, error) {
 		tag, n = uint64(g), n+x
 	}
 	return Ident(class<<33 | kind<<32 | tag), n, nil
+}
+
+func decodeInt(b []byte) int64 {
+	var j int64
+	for _, i := range b {
+		j <<= 8
+		j |= int64(i)
+	}
+	size := 64 - (len(b) * 8)
+	j <<= size
+	j >>= size
+	return j
+}
+
+func decodeSpecialFloat(info byte) (float64, error) {
+	var real float64
+	if r := info & 0x3F; r == 0 {
+		real = math.Inf(1)
+	} else if r == 1 {
+		real = math.Inf(-1)
+	} else if r == 2 {
+		real = math.NaN()
+	} else if r == 3 {
+		real = math.Copysign(0, -1)
+	} else {
+		return 0, fmt.Errorf("invalid special float")
+	}
+	return real, nil
+}
+
+func decodeBinaryFloat(info byte, str []byte) (float64, error) {
+	sign := 1.0
+	if info&0x40 == 0x40 {
+		sign = -sign
+	}
+	if base := info & 0x30; base != 0 {
+		return 0, fmt.Errorf("unsupported base")
+	}
+	var size int
+	if e := info & 0x03; e == 0 {
+		size = 1
+	} else if e == 1 {
+		size = 2
+	} else if e == 2 {
+		size = 3
+	} else {
+		size = 4
+	}
+	m := float64(decodeInt(str[size:]))
+	e := float64(decodeInt(str[:size]))
+	return sign * m * math.Pow(2, e), nil
+}
+
+func decodeDecimalFloat(str []byte) (float64, error) {
+	return strconv.ParseFloat(string(str), 64)
 }
 
 func decodeLength(b []byte) (int, int, error) {
