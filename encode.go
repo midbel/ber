@@ -242,7 +242,12 @@ func (e *Encoder) EncodeGeneralizedTime(val time.Time) error {
 
 func (e *Encoder) EncodeTimeWithIdent(val time.Time, tag Ident) error {
 	var pattern string
+	if tag.isZero() {
+		tag = GeneralizedTime
+	}
 	switch tag.Tag() {
+	case Int.Tag():
+		return e.EncodeInt(val.Unix())
 	case UniversalTime.Tag():
 		if !validTimeUTC(val) {
 			return fmt.Errorf("%s: date outside utc range", val)

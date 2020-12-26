@@ -3,6 +3,7 @@ package ber
 import (
 	"fmt"
 	"math"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -32,34 +33,63 @@ func (d *Decoder) Skip(n int) error {
 	return nil
 }
 
-func (d *Decoder) Decode(val interface{}) error {
-	if u, ok := val.(Unmarshaler); ok {
+func (d *Decoder) Decode(value interface{}) error {
+	if u, ok := value.(Unmarshaler); ok {
 		return u.Unmarshal(d)
 	}
 	var err error
-	switch val := val.(type) {
+	switch val := value.(type) {
 	case *string:
 		*val, err = d.DecodeString()
 	case *bool:
 		*val, err = d.DecodeBool()
 	case *int:
+		x, e := d.DecodeInt()
+		*val, err = int(x), e
 	case *int8:
+		x, e := d.DecodeInt()
+		*val, err = int8(x), e
 	case *int16:
+		x, e := d.DecodeInt()
+		*val, err = int16(x), e
 	case *int32:
+		x, e := d.DecodeInt()
+		*val, err = int32(x), e
 	case *int64:
+		*val, err = d.DecodeInt()
 	case *uint:
+		x, e := d.DecodeUint()
+		*val, err = uint(x), e
 	case *uint8:
+		x, e := d.DecodeUint()
+		*val, err = uint8(x), e
 	case *uint16:
+		x, e := d.DecodeUint()
+		*val, err = uint16(x), e
 	case *uint32:
+		x, e := d.DecodeUint()
+		*val, err = uint32(x), e
 	case *uint64:
+		*val, err = d.DecodeUint()
 	case *time.Time:
+		*val, err = d.DecodeTime()
 	default:
+		err = d.decodeValue(reflect.ValueOf(value).Elem())
 	}
 	return err
 }
 
 func (d *Decoder) DecodeTagged() (Ident, int, error) {
-	return 0, 0, nil
+	id, n, err := decodeIdentifier(d.buf[d.offset:])
+	if err != nil {
+		return id, 0, err
+	}
+	d.offset += n
+	size, n, err := decodeLength(d.buf[d.offset:])
+	if err == nil {
+		d.offset += n
+	}
+	return id, size, nil
 }
 
 func (d *Decoder) DecodeNull() error {
@@ -241,6 +271,12 @@ func (d *Decoder) DecodeTime() (time.Time, error) {
 	}
 	var pattern string
 	switch id.Tag() {
+	case Int.Tag():
+		i, err := d.DecodeInt()
+		if err != nil {
+			return t, err
+		}
+		return time.Unix(i, 0), nil
 	case UniversalTime.Tag():
 		pattern = patUniversTime
 	case GeneralizedTime.Tag():
@@ -260,6 +296,178 @@ func (d *Decoder) DecodeTime() (time.Time, error) {
 		t = t.UTC()
 	}
 	return t, err
+}
+
+func (d *Decoder) decodeValue(val reflect.Value) error {
+	if timetype == val.Type() {
+		t, err := d.DecodeTime()
+		if err == nil {
+			val.Set(reflect.ValueOf(t))
+		}
+		return err
+	}
+	switch k := val.Kind(); k {
+	case reflect.Struct:
+		return d.decodeStruct(val)
+	case reflect.Array, reflect.Slice:
+		return d.decodeArray(val)
+	case reflect.Map:
+		return d.decodeMap(val)
+	case reflect.Ptr:
+	case reflect.Interface:
+	case reflect.String:
+		v, err := d.DecodeString()
+		if err != nil {
+			return err
+		}
+		val.SetString(v)
+	case reflect.Bool:
+		v, err := d.DecodeBool()
+		if err != nil {
+			return err
+		}
+		val.SetBool(v)
+	case reflect.Float32, reflect.Float64:
+		v, err := d.DecodeFloat()
+		if err != nil {
+			return err
+		}
+		val.SetFloat(v)
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		v, err := d.DecodeInt()
+		if err != nil {
+			return err
+		}
+		val.SetInt(v)
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		v, err := d.DecodeUint()
+		if err != nil {
+			return err
+		}
+		val.SetUint(v)
+	default:
+		return fmt.Errorf("element can not be decoded into %s", k)
+	}
+	return nil
+}
+
+func (d *Decoder) decodeStruct(val reflect.Value) error {
+	id, n, err := decodeIdentifier(d.buf[d.offset:])
+	if err != nil {
+		return err
+	}
+	if id.Type() != Constructed {
+		return fmt.Errorf("struct: %w", ErrConstructed)
+	}
+	d.offset += n
+	size, n, err := decodeLength(d.buf[d.offset:])
+	if err != nil {
+		return err
+	}
+	d.offset += n
+	if size == 0 {
+		return nil
+	}
+	limit := d.offset + size
+	for i := 0; i < val.NumField() && d.offset < limit; i++ {
+		f := val.Field(i)
+		if !f.CanSet() {
+			continue
+		}
+		if err := d.decodeValue(f); err != nil {
+			return err
+		}
+		if d.offset > limit {
+			return fmt.Errorf("struct: too many bytes consumed to decode value")
+		}
+	}
+	return nil
+}
+
+func (d *Decoder) decodeArray(val reflect.Value) error {
+	id, n, err := decodeIdentifier(d.buf[d.offset:])
+	if err != nil {
+		return err
+	}
+	if id.Type() != Constructed {
+		return fmt.Errorf("array/slice: %w", ErrConstructed)
+	}
+	d.offset += n
+	size, n, err := decodeLength(d.buf[d.offset:])
+	if err != nil {
+		return err
+	}
+	d.offset += n
+	if size == 0 {
+		return nil
+	}
+	var (
+		limit = d.offset + size
+		typ   = val.Type()
+		slice = reflect.MakeSlice(typ, 0, val.Len())
+	)
+	for d.offset < limit {
+		e := reflect.New(typ.Elem()).Elem()
+		if err := d.decodeValue(e); err != nil {
+			return err
+		}
+		if d.offset > limit {
+			return fmt.Errorf("map: too many bytes consumed to decode value")
+		}
+		slice = reflect.Append(slice, e)
+	}
+	if val.Kind() == reflect.Array {
+		if slice.Len() > val.Len() {
+			return fmt.Errorf("array: too many elements decoded for source array (%d - %d)", slice.Len(), val.Len())
+		}
+		reflect.Copy(val, slice)
+	} else {
+		n := reflect.Copy(val, slice)
+		if n < slice.Len() {
+			slice = reflect.AppendSlice(val, slice.Slice(n, slice.Len()))
+			val.Set(slice)
+		}
+	}
+	return nil
+}
+
+func (d *Decoder) decodeMap(val reflect.Value) error {
+	id, n, err := decodeIdentifier(d.buf[d.offset:])
+	if err != nil {
+		return err
+	}
+	if id.Type() != Constructed {
+		return fmt.Errorf("map: %w", ErrConstructed)
+	}
+	d.offset += n
+	size, n, err := decodeLength(d.buf[d.offset:])
+	if err != nil {
+		return err
+	}
+	d.offset += n
+	if size == 0 {
+		return nil
+	}
+	var (
+		limit = d.offset + size
+		mp    = reflect.MakeMap(val.Type())
+		typ   = mp.Type()
+	)
+	for d.offset < limit {
+		k, v := reflect.New(typ.Key()).Elem(), reflect.New(typ.Elem()).Elem()
+		if err := d.decodeValue(k); err != nil {
+			return err
+		}
+		if err := d.decodeValue(v); err != nil {
+			return err
+		}
+		if d.offset > limit {
+			return fmt.Errorf("map: too many bytes consumed to decode value")
+		}
+		mp.SetMapIndex(k, v)
+	}
+	val.Set(mp)
+	return nil
 }
 
 func decodeIdentifier(b []byte) (Ident, int, error) {

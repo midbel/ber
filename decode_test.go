@@ -2,6 +2,7 @@ package ber
 
 import (
 	"math"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -14,6 +15,95 @@ func TestDecoder(t *testing.T) {
 	t.Run("time", testDecodeTime)
 	t.Run("oid", testDecodeOID)
 	t.Run("float", testDecodeFloat)
+	t.Run("struct", testDecodeStruct)
+	t.Run("map", testDecodeMap)
+	t.Run("slice", testDecodeSlice)
+}
+
+func encodeValue(val interface{}) ([]byte, error) {
+	var e Encoder
+	if err := e.Encode(val); err != nil {
+		return nil, err
+	}
+	return e.Bytes(), nil
+}
+
+func testDecodeSlice(t *testing.T) {
+	want := []string{"foo", "bar", "ber", "der", "per", "xer"}
+	input, err := encodeValue(want)
+	if err != nil {
+		t.Errorf("slice: fail to encode value %+v! %s", want, err)
+		return
+	}
+	data := [][]string{
+		nil,
+		make([]string, 0),
+		make([]string, 3),
+	}
+	for i := range data {
+		d := NewDecoder(input)
+		if err := d.Decode(&data[i]); err != nil {
+			t.Errorf("slice: fail to decode! %s", err)
+			return
+		}
+		if !reflect.DeepEqual(data[i], want) {
+			t.Errorf("slices mismatched! want %+v, got %+v", want, data[i])
+		}
+	}
+}
+
+func testDecodeMap(t *testing.T) {
+	want := map[string]int{
+		"foo": 127,
+		"bar": -128,
+	}
+	input, err := encodeValue(want)
+	if err != nil {
+		t.Errorf("map: fail to encode value %+v! %s", want, err)
+		return
+	}
+	var got map[string]int
+	d := NewDecoder(input)
+	if err := d.Decode(&got); err != nil {
+		t.Errorf("map: fail to decode! %s", err)
+		return
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("map mismatched! want %+v, got %+v", want, got)
+	}
+}
+
+func testDecodeStruct(t *testing.T) {
+	type Sample struct {
+		Str   string
+		Int   int64
+		Float float64
+		Bool  bool
+		When  time.Time
+	}
+	var (
+		want = Sample{
+			Str:   "ber",
+			Int:   127,
+			Bool:  true,
+			Float: 3.14,
+			When:  time.Date(2019, 12, 15, 19, 2, 10, 0, time.UTC),
+		}
+		got Sample
+	)
+	input, err := encodeValue(want)
+	if err != nil {
+		t.Errorf("struct: fail to encode value %+v! %s", want, err)
+		return
+	}
+	d := NewDecoder(input)
+	if err := d.Decode(&got); err != nil {
+		t.Errorf("struct: fail to decode! %s", err)
+		return
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("struct mismatched! want %+v, got %+v", want, got)
+	}
 }
 
 func testDecodeFloat(t *testing.T) {
