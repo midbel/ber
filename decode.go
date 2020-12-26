@@ -21,6 +21,11 @@ func NewDecoder(buf []byte) *Decoder {
 	}
 }
 
+func (d *Decoder) Reset(buf []byte) {
+	d.offset = 0
+	d.buf = append(d.buf[:0], buf...)
+}
+
 func (d *Decoder) Append(buf []byte) {
 	d.buf = append(d.buf, buf...)
 }
@@ -309,11 +314,14 @@ func (d *Decoder) decodeValue(val reflect.Value) error {
 	switch k := val.Kind(); k {
 	case reflect.Struct:
 		return d.decodeStruct(val)
-	case reflect.Array, reflect.Slice:
+	case reflect.Array:
 		return d.decodeArray(val)
+	case reflect.Slice:
+		return d.decodeSlice(val)
 	case reflect.Map:
 		return d.decodeMap(val)
 	case reflect.Ptr:
+		return d.decodeValue(val.Elem())
 	case reflect.Interface:
 	case reflect.String:
 		v, err := d.DecodeString()
@@ -384,13 +392,13 @@ func (d *Decoder) decodeStruct(val reflect.Value) error {
 	return nil
 }
 
-func (d *Decoder) decodeArray(val reflect.Value) error {
+func (d *Decoder) decodeSlice(val reflect.Value) error {
 	id, n, err := decodeIdentifier(d.buf[d.offset:])
 	if err != nil {
 		return err
 	}
 	if id.Type() != Constructed {
-		return fmt.Errorf("array/slice: %w", ErrConstructed)
+		return fmt.Errorf("slice: %w", ErrConstructed)
 	}
 	d.offset += n
 	size, n, err := decodeLength(d.buf[d.offset:])
@@ -412,21 +420,45 @@ func (d *Decoder) decodeArray(val reflect.Value) error {
 			return err
 		}
 		if d.offset > limit {
-			return fmt.Errorf("map: too many bytes consumed to decode value")
+			return fmt.Errorf("slice: too many bytes consumed to decode value")
 		}
 		slice = reflect.Append(slice, e)
 	}
-	if val.Kind() == reflect.Array {
-		if slice.Len() > val.Len() {
-			return fmt.Errorf("array: too many elements decoded for source array (%d - %d)", slice.Len(), val.Len())
+	if n := reflect.Copy(val, slice); n < slice.Len() {
+		slice = reflect.AppendSlice(val, slice.Slice(n, slice.Len()))
+		val.Set(slice)
+	}
+	return nil
+}
+
+func (d *Decoder) decodeArray(val reflect.Value) error {
+	id, n, err := decodeIdentifier(d.buf[d.offset:])
+	if err != nil {
+		return err
+	}
+	if id.Type() != Constructed {
+		return fmt.Errorf("array: %w", ErrConstructed)
+	}
+	d.offset += n
+	size, n, err := decodeLength(d.buf[d.offset:])
+	if err != nil {
+		return err
+	}
+	d.offset += n
+	if size == 0 {
+		return nil
+	}
+	limit := d.offset + size
+	for i := 0; i < val.Len(); i++ {
+		if d.offset >= limit {
+			break
 		}
-		reflect.Copy(val, slice)
-	} else {
-		n := reflect.Copy(val, slice)
-		if n < slice.Len() {
-			slice = reflect.AppendSlice(val, slice.Slice(n, slice.Len()))
-			val.Set(slice)
+		if err := d.decodeValue(val.Index(i)); err != nil {
+			return err
 		}
+	}
+	if d.offset < limit {
+		return fmt.Errorf("array: undecoded values remained! array too short")
 	}
 	return nil
 }
@@ -472,7 +504,7 @@ func (d *Decoder) decodeMap(val reflect.Value) error {
 
 func decodeIdentifier(b []byte) (Ident, int, error) {
 	if len(b) == 0 {
-		return 0, 0, nil
+		return 0, 0, fmt.Errorf("identifier should have at least 1 byte")
 	}
 	n := 1
 	class, kind, tag := uint64(b[0]>>6), uint64(b[0]>>5)&0x01, uint64(b[0]&0x1F)

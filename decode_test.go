@@ -18,6 +18,7 @@ func TestDecoder(t *testing.T) {
 	t.Run("struct", testDecodeStruct)
 	t.Run("map", testDecodeMap)
 	t.Run("slice", testDecodeSlice)
+	t.Run("array", testDecodeArray)
 }
 
 func encodeValue(val interface{}) ([]byte, error) {
@@ -26,6 +27,41 @@ func encodeValue(val interface{}) ([]byte, error) {
 		return nil, err
 	}
 	return e.Bytes(), nil
+}
+
+func testDecodeArray(t *testing.T) {
+	want := [3]string{"foo", "bar", "foobar"}
+	input, err := encodeValue(want)
+	if err != nil {
+		t.Errorf("array: fail to encode value %+v! %s", want, err)
+		return
+	}
+	var (
+		arr3 [3]string
+		arr2 [2]string
+		arr6 [6]string
+		d    = NewDecoder(input)
+	)
+	if err := d.Decode(&arr3); err != nil {
+		t.Errorf("arr3: fail to decode! %s", err)
+		return
+	}
+	if !reflect.DeepEqual(arr3, want) {
+		t.Errorf("slices mismatched! want %+v, got %+v", want, arr3)
+	}
+	d.Reset(input)
+	if err := d.Decode(&arr6); err != nil {
+		t.Errorf("arr6: fail to decode! %s", err)
+		return
+	}
+	if !reflect.DeepEqual(arr6[:3], want[:]) {
+		t.Errorf("slices mismatched! want %+v, got %+v", want, arr6)
+		return
+	}
+	d.Reset(input)
+	if err := d.Decode(&arr2); err == nil {
+		t.Errorf("arr2: decoding should failed!")
+	}
 }
 
 func testDecodeSlice(t *testing.T) {
