@@ -113,7 +113,12 @@ func (i Ident) isZero() bool {
 }
 
 func (i Ident) setTag(tag uint32) Ident {
-	v := uint64(i) | uint64(tag)
+	v := uint64(i.clearTag()) | uint64(tag)
+	return Ident(v)
+}
+
+func (i Ident) clearTag() Ident {
+	v := uint64(i) &^ ((1<<5)-1)
 	return Ident(v)
 }
 
@@ -176,6 +181,8 @@ func parseTag(str string, i Ident) (Ident, bool, error) {
 			i = PrintableString
 		case str == "utf8":
 			i = UTF8String
+		case str == "octetstr":
+			i = OctetString
 		case str == "oid":
 			i = ObjectId
 		case str == "roid":
