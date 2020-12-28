@@ -399,7 +399,10 @@ func (e *Encoder) merge(other *Encoder, tag Ident) error {
 	return e.err
 }
 
-var timetype = reflect.TypeOf(time.Now())
+var (
+	timetype = reflect.TypeOf(time.Now())
+	bytestype = reflect.TypeOf([]byte{})
+)
 
 func (e *Encoder) encodeValue(val reflect.Value, tag Ident) error {
 	switch val.Kind() {
@@ -410,6 +413,10 @@ func (e *Encoder) encodeValue(val reflect.Value, tag Ident) error {
 		}
 		e.err = e.encodeStruct(val, tag)
 	case reflect.Slice, reflect.Array:
+		if val.Type().Elem() == bytestype {
+			e.err = e.encodeBinary(val, tag)
+			break
+		}
 		e.err = e.encodeArray(val, tag)
 	case reflect.Map:
 		e.err = e.encodeMap(val, tag)
@@ -510,6 +517,24 @@ func (e *Encoder) encodeStruct(val reflect.Value, tag Ident) error {
 		if err = ex.encodeValue(f, id); err != nil {
 			e.err = err
 			return e.err
+		}
+	}
+	return e.merge(&ex, tag)
+}
+
+func (e *Encoder) encodeBinary(val reflect.Value, tag Ident) error {
+	if tag.isZero() {
+		tag = Sequence
+	}
+	if tag.Type() != Constructed {
+		return fmt.Errorf("struct: %w", ErrConstructed)
+	}
+	var ex Encoder
+	for i := 0; i < val.Len(); i++ {
+		bs := val.Index(i).Interface().([]byte)
+		if err := ex.encodeBytes(bs, OctetString); err != nil {
+			e.err = err
+			return err
 		}
 	}
 	return e.merge(&ex, tag)
@@ -715,7 +740,7 @@ func encodeSpecialFloat(f float64) []byte {
 func encodeUint(i uint64, less bool) []byte {
 	c := encode256(i)
 	if len(c) < 1 {
-		return c
+		return []byte{0x00}
 	}
 	if less && c[0]>>7 == 0 {
 		c = append(c[:1], c[0:]...)
