@@ -100,6 +100,18 @@ func (e *Encoder) EncodeWithIdent(val interface{}, tag Ident) error {
 	return e.err
 }
 
+func (e *Encoder) EncodeChild(fn func(*Encoder) error) error {
+	return e.EncodeChildWithIdent(0, fn)
+}
+
+func (e *Encoder) EncodeChildWithIdent(id Ident, fn func(*Encoder) error) error {
+	var ex Encoder
+	if err := fn(&ex); err != nil {
+		return err
+	}
+	return e.merge(ex, id)
+}
+
 func (e *Encoder) EncodeNull() error {
 	return e.EncodeNullWithIdent(Null)
 }
@@ -358,9 +370,9 @@ func (e *Encoder) encodeBytes(b []byte, i Ident) error {
 }
 
 func (e *Encoder) encodeConstructed(i Ident) ([]byte, error) {
-	if i.Type() != Constructed {
-		return nil, fmt.Errorf("constructed bit not set")
-	}
+	// if i.Type() != Constructed {
+	// 	return nil, fmt.Errorf("constructed bit not set")
+	// }
 	if e.err != nil {
 		return nil, e.err
 	}
@@ -407,7 +419,7 @@ var (
 func (e *Encoder) encodeValue(val reflect.Value, tag Ident) error {
 	switch val.Kind() {
 	case reflect.Struct:
-		if timetype == val.Type() {
+		if val.Type() == timetype {
 			e.err = e.EncodeWithIdent(val.Interface(), tag)
 			break
 		}
@@ -474,9 +486,9 @@ func (e *Encoder) encodeStruct(val reflect.Value, tag Ident) error {
 	if tag.isZero() {
 		tag = Sequence
 	}
-	if tag.Type() != Constructed {
-		return fmt.Errorf("struct: %w", ErrConstructed)
-	}
+	// if tag.Type() != Constructed {
+	// 	return fmt.Errorf("struct: %w", ErrConstructed)
+	// }
 	var (
 		ex Encoder
 		tp = val.Type()
@@ -526,9 +538,9 @@ func (e *Encoder) encodeBinary(val reflect.Value, tag Ident) error {
 	if tag.isZero() {
 		tag = Sequence
 	}
-	if tag.Type() != Constructed {
-		return fmt.Errorf("struct: %w", ErrConstructed)
-	}
+	// if tag.Type() != Constructed {
+	// 	return fmt.Errorf("struct: %w", ErrConstructed)
+	// }
 	var ex Encoder
 	for i := 0; i < val.Len(); i++ {
 		bs := val.Index(i).Interface().([]byte)
@@ -544,9 +556,9 @@ func (e *Encoder) encodeArray(val reflect.Value, tag Ident) error {
 	if tag.isZero() {
 		tag = Sequence
 	}
-	if tag.Type() != Constructed {
-		return fmt.Errorf("array: %w", ErrConstructed)
-	}
+	// if tag.Type() != Constructed {
+	// 	return fmt.Errorf("array: %w", ErrConstructed)
+	// }
 	var ex Encoder
 	for i := 0; i < val.Len(); i++ {
 		if err := ex.encodeValue(val.Index(i), 0); err != nil {
@@ -561,9 +573,9 @@ func (e *Encoder) encodeMap(val reflect.Value, tag Ident) error {
 	if tag.isZero() {
 		tag = Sequence
 	}
-	if tag.Type() != Constructed {
-		return fmt.Errorf("map: %w", ErrConstructed)
-	}
+	// if tag.Type() != Constructed {
+	// 	return fmt.Errorf("map: %w", ErrConstructed)
+	// }
 	var ex Encoder
 	for _, k := range val.MapKeys() {
 		if err := ex.encodeValue(k, 0); err != nil {

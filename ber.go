@@ -52,6 +52,33 @@ const (
 	patUniversTime = "060102150405-0700"
 )
 
+type Raw []byte
+
+func (r *Raw) Peek() (Ident, error) {
+	id, _, err := decodeIdentifier([]byte(*r))
+	return id, err
+}
+
+func (r *Raw) Unmarshal(d *Decoder) error {
+	offset := d.offset
+	_, n, err := decodeIdentifier(d.buf[d.offset:])
+	if err != nil {
+		return err
+	}
+	d.offset += n
+	size, n, err := decodeLength(d.buf[d.offset:])
+	if err != nil {
+		return err
+	}
+	d.offset += n + size
+	if d.offset <= d.Size() {
+		*r = append(*r, d.buf[offset:d.offset]...)
+	} else{
+		d.offset = offset
+	}
+	return nil
+}
+
 type Ident uint64
 
 func NewPrimitive(code uint64) Ident {

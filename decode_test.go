@@ -116,6 +116,7 @@ func testDecodeStruct(t *testing.T) {
 		Float float64
 		Bool  bool
 		When  time.Time
+		Array []string
 	}
 	var (
 		want = Sample{
@@ -124,6 +125,7 @@ func testDecodeStruct(t *testing.T) {
 			Bool:  true,
 			Float: 3.14,
 			When:  time.Date(2019, 12, 15, 19, 2, 10, 0, time.UTC),
+			Array: []string{"foo", "bar"},
 		}
 		got Sample
 	)

@@ -21,12 +21,43 @@ func NewDecoder(buf []byte) *Decoder {
 	}
 }
 
+func (d *Decoder) Peek() (Ident, error) {
+	id, _, err := decodeIdentifier(d.buf[d.offset:])
+	return id, err
+}
+
+func (d *Decoder) Need() int {
+	offset := d.offset
+	_, n, err := decodeIdentifier(d.buf[offset:])
+	if err != nil {
+		return n
+	}
+	offset += n
+	size, x, err := decodeLength(d.buf[offset:])
+	if err != nil {
+		return 0
+	}
+	return size + x + n
+}
+
 func (d *Decoder) Reset(buf []byte) {
 	d.offset = 0
+	d.err = nil
 	d.buf = append(d.buf[:0], buf...)
 }
 
+func (d *Decoder) Bytes() []byte {
+	if d.Empty() {
+		return nil
+	}
+	return append([]byte{}, d.buf[d.offset:]...)
+}
+
 func (d *Decoder) Append(buf []byte) {
+	if d.offset > 0 {
+		d.buf = d.buf[d.offset:]
+		d.offset = 0
+	}
 	d.buf = append(d.buf, buf...)
 }
 
@@ -34,8 +65,46 @@ func (d *Decoder) Empty() bool {
 	return d.offset >= len(d.buf)
 }
 
-func (d *Decoder) Skip(n int) error {
-	return nil
+func (d *Decoder) Len() int {
+	return len(d.buf) - d.offset
+}
+
+func (d *Decoder) Size() int {
+	return len(d.buf)
+}
+
+func (d *Decoder) Can() bool {
+	if d.Empty() {
+		return false
+	}
+	offset := d.offset
+	_, n, err := decodeIdentifier(d.buf[offset:])
+	if err != nil {
+		return false
+	}
+	offset += n
+	if offset >= len(d.buf) {
+		return false
+	}
+	size, n, err := decodeLength(d.buf[offset:])
+	if err != nil {
+		return false
+	}
+	offset += n + size
+	return offset <= len(d.buf)
+}
+
+func (d *Decoder) Skip() error {
+	_, n, err := decodeIdentifier(d.buf[d.offset:])
+	if err != nil {
+		return err
+	}
+	d.offset += n
+	size, n, err := decodeLength(d.buf[d.offset:])
+	if err == nil {
+		d.offset += n + size
+	}
+	return err
 }
 
 func (d *Decoder) Decode(value interface{}) error {
@@ -156,7 +225,6 @@ func (d *Decoder) DecodeInt() (int64, error) {
 		return 0, err
 	}
 	d.offset += size + n
-
 	return decodeInt(d.buf[d.offset-size:d.offset], true), nil
 }
 
@@ -303,16 +371,27 @@ func (d *Decoder) DecodeTime() (time.Time, error) {
 	return t, err
 }
 
+var unmarshaltype = reflect.TypeOf((*Unmarshaler)(nil)).Elem()
+
 func (d *Decoder) decodeValue(val reflect.Value) error {
-	if timetype == val.Type() {
-		t, err := d.DecodeTime()
-		if err == nil {
-			val.Set(reflect.ValueOf(t))
+	if val.CanInterface() && val.Type().Implements(unmarshaltype) {
+		return val.Interface().(Unmarshaler).Unmarshal(d)
+	}
+	if val.CanAddr() {
+		pv := val.Addr()
+		if pv.CanInterface() && pv.Type().Implements(unmarshaltype) {
+			return pv.Interface().(Unmarshaler).Unmarshal(d)
 		}
-		return err
 	}
 	switch k := val.Kind(); k {
 	case reflect.Struct:
+		if timetype == val.Type() {
+			t, err := d.DecodeTime()
+			if err == nil {
+				val.Set(reflect.ValueOf(t))
+			}
+			return err
+		}
 		return d.decodeStruct(val)
 	case reflect.Array:
 		return d.decodeArray(val)
@@ -392,6 +471,46 @@ func (d *Decoder) decodeStruct(val reflect.Value) error {
 	return nil
 }
 
+func (d *Decoder) decodeMap(val reflect.Value) error {
+	id, n, err := decodeIdentifier(d.buf[d.offset:])
+	if err != nil {
+		return err
+	}
+	if id.Type() != Constructed {
+		return fmt.Errorf("map: %w", ErrConstructed)
+	}
+	d.offset += n
+	size, n, err := decodeLength(d.buf[d.offset:])
+	if err != nil {
+		return err
+	}
+	d.offset += n
+	if size == 0 {
+		return nil
+	}
+	var (
+		limit = d.offset + size
+		mp    = reflect.MakeMap(val.Type())
+		typ   = mp.Type()
+	)
+	for d.offset < limit {
+		// TODO: element of map should be decoded as sequence type
+		k, v := reflect.New(typ.Key()).Elem(), reflect.New(typ.Elem()).Elem()
+		if err := d.decodeValue(k); err != nil {
+			return err
+		}
+		if err := d.decodeValue(v); err != nil {
+			return err
+		}
+		if d.offset > limit {
+			return fmt.Errorf("map: too many bytes consumed to decode value")
+		}
+		mp.SetMapIndex(k, v)
+	}
+	val.Set(mp)
+	return nil
+}
+
 func (d *Decoder) decodeSlice(val reflect.Value) error {
 	id, n, err := decodeIdentifier(d.buf[d.offset:])
 	if err != nil {
@@ -460,45 +579,6 @@ func (d *Decoder) decodeArray(val reflect.Value) error {
 	if d.offset < limit {
 		return fmt.Errorf("array: undecoded values remained! array too short")
 	}
-	return nil
-}
-
-func (d *Decoder) decodeMap(val reflect.Value) error {
-	id, n, err := decodeIdentifier(d.buf[d.offset:])
-	if err != nil {
-		return err
-	}
-	if id.Type() != Constructed {
-		return fmt.Errorf("map: %w", ErrConstructed)
-	}
-	d.offset += n
-	size, n, err := decodeLength(d.buf[d.offset:])
-	if err != nil {
-		return err
-	}
-	d.offset += n
-	if size == 0 {
-		return nil
-	}
-	var (
-		limit = d.offset + size
-		mp    = reflect.MakeMap(val.Type())
-		typ   = mp.Type()
-	)
-	for d.offset < limit {
-		k, v := reflect.New(typ.Key()).Elem(), reflect.New(typ.Elem()).Elem()
-		if err := d.decodeValue(k); err != nil {
-			return err
-		}
-		if err := d.decodeValue(v); err != nil {
-			return err
-		}
-		if d.offset > limit {
-			return fmt.Errorf("map: too many bytes consumed to decode value")
-		}
-		mp.SetMapIndex(k, v)
-	}
-	val.Set(mp)
 	return nil
 }
 
