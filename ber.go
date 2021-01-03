@@ -194,6 +194,8 @@ func parseTag(str string, i Ident) (Ident, bool, error) {
 			}
 		case str == "omitempty":
 			omit = true
+		case str == "enumerated":
+			i = Enumerated
 		case str == "sequence":
 			i = Sequence
 		case str == "set":

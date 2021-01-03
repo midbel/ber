@@ -109,7 +109,7 @@ func (e *Encoder) EncodeChildWithIdent(id Ident, fn func(*Encoder) error) error 
 	if err := fn(&ex); err != nil {
 		return err
 	}
-	return e.merge(ex, id)
+	return e.merge(&ex, id)
 }
 
 func (e *Encoder) EncodeNull() error {
@@ -219,7 +219,7 @@ func (e *Encoder) EncodeStringIA5(val string) error {
 
 func (e *Encoder) EncodeStringWithIdent(val string, tag Ident) error {
 	if tag.isZero() {
-		tag = UTF8String
+		tag = OctetString
 	}
 	if tag.Tag() == UTF8String.Tag() && !utf8.ValidString(val) {
 		return fmt.Errorf("%s: invalid utf8 string", val)
