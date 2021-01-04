@@ -516,7 +516,7 @@ func (e *Encoder) encodeStruct(val reflect.Value, tag Ident) error {
 		switch k := f.Kind(); {
 		default:
 			omit = false
-		case omit && k == reflect.Ptr:
+		case omit && (k == reflect.Ptr || k == reflect.Interface):
 			omit = f.IsNil()
 		case omit && k == reflect.Struct:
 			omit = f.NumField() == 0
