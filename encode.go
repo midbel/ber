@@ -31,6 +31,10 @@ func (e *Encoder) AsSet() ([]byte, error) {
 	return e.encodeConstructed(Set)
 }
 
+func (e *Encoder) As(id Ident) ([]byte, error) {
+	return e.encodeConstructed(id)
+}
+
 func (e *Encoder) Bytes() []byte {
 	buf := make([]byte, len(e.buf))
 	copy(buf, e.buf)
