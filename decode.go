@@ -438,6 +438,8 @@ func (d *Decoder) decodeValue(val reflect.Value) error {
 	return nil
 }
 
+var identtype = reflect.TypeOf(Ident(0))
+
 func (d *Decoder) decodeStruct(val reflect.Value) error {
 	id, n, err := decodeIdentifier(d.buf[d.offset:])
 	if err != nil {
@@ -460,6 +462,12 @@ func (d *Decoder) decodeStruct(val reflect.Value) error {
 		f := val.Field(i)
 		if !f.CanSet() {
 			continue
+		}
+		if tf := val.Type().Field(i); f.Type() == identtype {
+			if tf.Name == "Id" || tf.Tag.Get("ber") == "id" {
+				f.Set(reflect.ValueOf(id))
+				continue
+			}
 		}
 		if err := d.decodeValue(f); err != nil {
 			return err

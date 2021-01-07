@@ -416,7 +416,7 @@ func (e *Encoder) merge(other *Encoder, tag Ident) error {
 }
 
 var (
-	timetype = reflect.TypeOf(time.Now())
+	timetype  = reflect.TypeOf(time.Now())
 	bytestype = reflect.TypeOf([]byte{})
 )
 
@@ -507,6 +507,12 @@ func (e *Encoder) encodeStruct(val reflect.Value, tag Ident) error {
 		)
 		if sf.PkgPath != "" {
 			continue
+		}
+		if val.Type() == identtype {
+			if sf.Name == "Id" || sf.Tag.Get("ber") == "id" {
+				tag = val.Interface().(Ident)
+				continue
+			}
 		}
 		if tag := sf.Tag.Get("ber"); tag != "" {
 			if tag == "-" {

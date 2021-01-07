@@ -73,7 +73,7 @@ func (r *Raw) Unmarshal(d *Decoder) error {
 	d.offset += n + size
 	if d.offset <= d.Size() {
 		*r = append(*r, d.buf[offset:d.offset]...)
-	} else{
+	} else {
 		d.offset = offset
 	}
 	return nil
@@ -145,7 +145,7 @@ func (i Ident) setTag(tag uint32) Ident {
 }
 
 func (i Ident) clearTag() Ident {
-	v := uint64(i) &^ ((1<<5)-1)
+	v := uint64(i) &^ ((1 << 5) - 1)
 	return Ident(v)
 }
 
