@@ -13,7 +13,7 @@ type Marshaler interface {
 }
 
 type Unmarshaler interface {
-	Unmarshal(*Decoder) error
+	Unmarshal([]byte) error
 }
 
 const (

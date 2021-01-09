@@ -109,7 +109,7 @@ func (d *Decoder) Skip() error {
 
 func (d *Decoder) Decode(value interface{}) error {
 	if u, ok := value.(Unmarshaler); ok {
-		return u.Unmarshal(d)
+		return d.decodeUnmarshaler(u)
 	}
 	var err error
 	switch val := value.(type) {
@@ -373,14 +373,28 @@ func (d *Decoder) DecodeTime() (time.Time, error) {
 
 var unmarshaltype = reflect.TypeOf((*Unmarshaler)(nil)).Elem()
 
+func (d *Decoder) decodeUnmarshaler(u Unmarshaler) error {
+	_, n, err := decodeIdentifier(d.buf[d.offset:])
+	if err != nil {
+		return err
+	}
+	d.offset += n
+	size, n, err := decodeLength(d.buf[d.offset:])
+	if err != nil {
+		return err
+	}
+	d.offset += n + size
+	return u.Unmarshal(d.buf[d.offset-size:d.offset])
+}
+
 func (d *Decoder) decodeValue(val reflect.Value) error {
 	if val.CanInterface() && val.Type().Implements(unmarshaltype) {
-		return val.Interface().(Unmarshaler).Unmarshal(d)
+		return d.decodeUnmarshaler(val.Interface().(Unmarshaler))
 	}
 	if val.CanAddr() {
 		pv := val.Addr()
 		if pv.CanInterface() && pv.Type().Implements(unmarshaltype) {
-			return pv.Interface().(Unmarshaler).Unmarshal(d)
+			return d.decodeUnmarshaler(pv.Interface().(Unmarshaler))
 		}
 	}
 	switch k := val.Kind(); k {
