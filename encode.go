@@ -429,8 +429,8 @@ func (e *Encoder) encodeValue(val reflect.Value, tag Ident) error {
 		}
 		e.err = e.encodeStruct(val, tag)
 	case reflect.Slice, reflect.Array:
-		if val.Type().Elem() == bytestype {
-			e.err = e.encodeBinary(val, tag)
+		if val.Type() == bytestype {
+			e.err = e.EncodeBytesWithIdent(val.Bytes(), tag)
 			break
 		}
 		e.err = e.encodeArray(val, tag)
@@ -539,24 +539,6 @@ func (e *Encoder) encodeStruct(val reflect.Value, tag Ident) error {
 		if err = ex.encodeValue(f, id); err != nil {
 			e.err = err
 			return e.err
-		}
-	}
-	return e.merge(&ex, tag)
-}
-
-func (e *Encoder) encodeBinary(val reflect.Value, tag Ident) error {
-	if tag.isZero() {
-		tag = Sequence
-	}
-	// if tag.Type() != Constructed {
-	// 	return fmt.Errorf("struct: %w", ErrConstructed)
-	// }
-	var ex Encoder
-	for i := 0; i < val.Len(); i++ {
-		bs := val.Index(i).Interface().([]byte)
-		if err := ex.encodeBytes(bs, OctetString); err != nil {
-			e.err = err
-			return err
 		}
 	}
 	return e.merge(&ex, tag)
