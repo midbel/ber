@@ -147,6 +147,8 @@ func (d *Decoder) Decode(value interface{}) error {
 		*val, err = d.DecodeUint()
 	case *time.Time:
 		*val, err = d.DecodeTime()
+	case *Raw:
+		*val, err = d.decodeRaw()
 	default:
 		err = d.decodeValue(reflect.ValueOf(value).Elem())
 	}
@@ -371,7 +373,25 @@ func (d *Decoder) DecodeTime() (time.Time, error) {
 	return t, err
 }
 
-var unmarshaltype = reflect.TypeOf((*Unmarshaler)(nil)).Elem()
+var (
+	unmarshaltype = reflect.TypeOf((*Unmarshaler)(nil)).Elem()
+	rawtype       = reflect.TypeOf(Raw(nil))
+)
+
+func (d *Decoder) decodeRaw() (Raw, error) {
+	offset := d.offset
+	_, n, err := decodeIdentifier(d.buf[d.offset:])
+	if err != nil {
+		return nil, err
+	}
+	d.offset += n
+	size, n, err := decodeLength(d.buf[d.offset:])
+	if err != nil {
+		return nil, err
+	}
+	d.offset += n + size
+	return Raw(d.buf[offset:d.offset]), nil
+}
 
 func (d *Decoder) decodeUnmarshaler(u Unmarshaler) error {
 	_, n, err := decodeIdentifier(d.buf[d.offset:])
@@ -384,7 +404,7 @@ func (d *Decoder) decodeUnmarshaler(u Unmarshaler) error {
 		return err
 	}
 	d.offset += n + size
-	return u.Unmarshal(d.buf[d.offset-size:d.offset])
+	return u.Unmarshal(d.buf[d.offset-size : d.offset])
 }
 
 func (d *Decoder) decodeValue(val reflect.Value) error {
@@ -396,6 +416,13 @@ func (d *Decoder) decodeValue(val reflect.Value) error {
 		if pv.CanInterface() && pv.Type().Implements(unmarshaltype) {
 			return d.decodeUnmarshaler(pv.Interface().(Unmarshaler))
 		}
+	}
+	if val.Type() == rawtype {
+		raw, err := d.decodeRaw()
+		if err == nil {
+			val.Set(reflect.ValueOf(raw))
+		}
+		return err
 	}
 	switch k := val.Kind(); k {
 	case reflect.Struct:
@@ -471,17 +498,22 @@ func (d *Decoder) decodeStruct(val reflect.Value) error {
 	if size == 0 {
 		return nil
 	}
-	limit := d.offset + size
+	var (
+		limit = d.offset + size
+		typ = val.Type()
+	)
 	for i := 0; i < val.NumField() && d.offset < limit; i++ {
 		f := val.Field(i)
 		if !f.CanSet() {
 			continue
 		}
-		if tf := val.Type().Field(i); f.Type() == identtype {
+		if tf := typ.Field(i); f.Type() == identtype {
 			if tf.Name == "Id" || tf.Tag.Get("ber") == "id" {
 				f.Set(reflect.ValueOf(id))
 				continue
 			}
+		} else if tf.Tag.Get("ber") == "-" {
+			continue
 		}
 		if err := d.decodeValue(f); err != nil {
 			return err
