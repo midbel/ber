@@ -283,6 +283,20 @@ func (d *Decoder) DecodeFloat() (float64, error) {
 	return 0, nil
 }
 
+func (d *Decoder) DecodeBytes() ([]byte, error) {
+	_, n, err := decodeIdentifier(d.buf[d.offset:])
+	if err != nil {
+		return nil, err
+	}
+	d.offset += n
+	size, n, err := decodeLength(d.buf[d.offset:])
+	if err != nil {
+		return nil, err
+	}
+	d.offset += size + n
+	return d.buf[d.offset-size : d.offset], nil
+}
+
 func (d *Decoder) DecodeString() (string, error) {
 	_, n, err := decodeIdentifier(d.buf[d.offset:])
 	if err != nil {
@@ -437,6 +451,13 @@ func (d *Decoder) decodeValue(val reflect.Value) error {
 	case reflect.Array:
 		return d.decodeArray(val)
 	case reflect.Slice:
+		if val.Type() == bytestype {
+			bs, err := d.DecodeBytes()
+			if err != nil {
+				return err
+			}
+			val.SetBytes(bs)
+		}
 		return d.decodeSlice(val)
 	case reflect.Map:
 		return d.decodeMap(val)
@@ -592,9 +613,9 @@ func (d *Decoder) decodeSlice(val reflect.Value) error {
 		if err := d.decodeValue(e); err != nil {
 			return err
 		}
-		if d.offset > limit {
-			return fmt.Errorf("slice: too many bytes consumed to decode value")
-		}
+		// if d.offset > limit {
+		// 	return fmt.Errorf("slice: too many bytes consumed to decode value")
+		// }
 		slice = reflect.Append(slice, e)
 	}
 	if n := reflect.Copy(val, slice); n < slice.Len() {
