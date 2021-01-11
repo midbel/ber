@@ -521,7 +521,7 @@ func (d *Decoder) decodeStruct(val reflect.Value) error {
 	}
 	var (
 		limit = d.offset + size
-		typ = val.Type()
+		typ   = val.Type()
 	)
 	for i := 0; i < val.NumField() && d.offset < limit; i++ {
 		f := val.Field(i)
