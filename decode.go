@@ -294,6 +294,9 @@ func (d *Decoder) DecodeBytes() ([]byte, error) {
 		return nil, err
 	}
 	d.offset += size + n
+	if size == 0 {
+		return nil, nil
+	}
 	return d.buf[d.offset-size : d.offset], nil
 }
 
@@ -457,6 +460,7 @@ func (d *Decoder) decodeValue(val reflect.Value) error {
 				return err
 			}
 			val.SetBytes(bs)
+			break
 		}
 		return d.decodeSlice(val)
 	case reflect.Map:

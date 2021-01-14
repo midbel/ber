@@ -481,9 +481,9 @@ var identForKind = map[reflect.Kind]Ident{
 	reflect.Bool:    Bool,
 	reflect.Float32: Real,
 	reflect.Float64: Real,
-	reflect.Array:   Sequence,
-	reflect.Slice:   Sequence,
-	reflect.Map:     Sequence,
+	// reflect.Array:   Sequence,
+	// reflect.Slice:   Sequence,
+	// reflect.Map:     Sequence,
 }
 
 func (e *Encoder) encodeStruct(val reflect.Value, tag Ident) error {
